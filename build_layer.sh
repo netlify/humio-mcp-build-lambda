@@ -95,6 +95,23 @@ cp -r "$HUMIO_MCP_SOURCE/dist" "$BUILD_DIR/" || {
     exit 1
 }
 
+# Copy package.json so Node treats dist/*.js as ESM ("type": "module") --
+# without it, dist/index.js's import syntax fails to parse on the Lambda
+# nodejs20.x runtime, which doesn't auto-detect module syntax by default.
+cp "$HUMIO_MCP_SOURCE/package.json" "$BUILD_DIR/" || {
+    echo "Error: Failed to copy package.json"
+    exit 1
+}
+
+# Copy the example query config as the runtime config. JsonConfigProvider
+# resolves "humio-query-config.json" relative to its own module location,
+# three directories up from dist/humio/config -- i.e. the layer root.
+# Without this file present, the server fails to start.
+cp "$HUMIO_MCP_SOURCE/humio-query-config.example.json" "$BUILD_DIR/humio-query-config.json" || {
+    echo "Error: Failed to copy humio-query-config.json"
+    exit 1
+}
+
 # Create layer ZIP
 echo "Creating Lambda layer ZIP..."
 cd "$BUILD_DIR"
@@ -102,7 +119,7 @@ if [ -f "$LAYER_ZIP" ]; then
     rm "$LAYER_ZIP"
 fi
 
-zip -r -q "$LAYER_ZIP" node_modules dist || {
+zip -r -q "$LAYER_ZIP" node_modules dist package.json humio-query-config.json || {
     echo "Error: Failed to create ZIP"
     exit 1
 }

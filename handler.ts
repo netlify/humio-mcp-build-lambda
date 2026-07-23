@@ -32,8 +32,10 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
       };
     }
 
-    // Spawn humio-mcp process with environment variables
-    const mcpProcess = spawn('humio-mcp', [], {
+    // humio-mcp ships as a Node/ESM entry point in the Lambda layer
+    // (/opt/dist/index.js), not a standalone executable -- run it with the
+    // same node binary executing this handler.
+    const mcpProcess = spawn(process.execPath, ['/opt/dist/index.js'], {
       env: {
         ...process.env,
         HUMIO_API_TOKEN,
