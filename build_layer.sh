@@ -40,6 +40,18 @@ else
     exit 1
 fi
 
+# Package handler.js as its own deployable ZIP (Lambda function package).
+# Terraform downloads this directly -- no npm/npx needed at apply time.
+HANDLER_ZIP="${TF_DIR}/handler.zip"
+if [ -f "$HANDLER_ZIP" ]; then
+    rm "$HANDLER_ZIP"
+fi
+(cd "$BUILD_DIR" && zip -q "$HANDLER_ZIP" handler.js) || {
+    echo "Error: Failed to create handler ZIP"
+    exit 1
+}
+echo "✓ Handler ZIP built: $HANDLER_ZIP"
+
 # Build humio-mcp dependencies
 echo "Building humio-mcp dependencies..."
 HUMIO_MCP_SOURCE="${BUILD_DIR}/humio-mcp-src"

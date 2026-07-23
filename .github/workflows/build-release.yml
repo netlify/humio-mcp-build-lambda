@@ -46,7 +46,9 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v1
         with:
-          files: .terraform/humio_mcp_layer.zip
+          files: |
+            .terraform/humio_mcp_layer.zip
+            .terraform/handler.zip
           tag_name: ${{ steps.release-info.outputs.tag_name }}
           name: ${{ steps.release-info.outputs.release_name }}
           prerelease: ${{ steps.release-info.outputs.prerelease }}
