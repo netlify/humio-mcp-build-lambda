@@ -55,8 +55,8 @@ echo "✓ Handler ZIP built: $HANDLER_ZIP"
 # Build humio-mcp dependencies
 echo "Building humio-mcp dependencies..."
 HUMIO_MCP_SOURCE="${BUILD_DIR}/humio-mcp-src"
-HUMIO_MCP_REPO="https://github.com/islam3zzat/humio-mcp.git"
-HUMIO_MCP_REF="main"
+HUMIO_MCP_REPO="https://github.com/pcn/humio-mcp.git"
+HUMIO_MCP_REF="new-features"
 
 # Clone humio-mcp from GitHub
 if [ ! -d "$HUMIO_MCP_SOURCE" ]; then
@@ -112,6 +112,15 @@ cp "$HUMIO_MCP_SOURCE/humio-query-config.example.json" "$BUILD_DIR/humio-query-c
     exit 1
 }
 
+# Copy the example repo config as the runtime config. RepoConfigProvider
+# resolves "humio-repo-config.json" the same way, and maps each "region"
+# value to the Humio repo/view it queries. Without this file present, the
+# server fails to start.
+cp "$HUMIO_MCP_SOURCE/humio-repo-config.example.json" "$BUILD_DIR/humio-repo-config.json" || {
+    echo "Error: Failed to copy humio-repo-config.json"
+    exit 1
+}
+
 # Create layer ZIP
 echo "Creating Lambda layer ZIP..."
 cd "$BUILD_DIR"
@@ -119,7 +128,7 @@ if [ -f "$LAYER_ZIP" ]; then
     rm "$LAYER_ZIP"
 fi
 
-zip -r -q "$LAYER_ZIP" node_modules dist package.json humio-query-config.json || {
+zip -r -q "$LAYER_ZIP" node_modules dist package.json humio-query-config.json humio-repo-config.json || {
     echo "Error: Failed to create ZIP"
     exit 1
 }
