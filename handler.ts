@@ -86,6 +86,10 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
         }
 
         if (output) {
+          console.log('humio-mcp stdout:', output);
+          if (errorOutput) {
+            console.log('humio-mcp stderr:', errorOutput);
+          }
           return resolve({
             statusCode: 200,
             headers: { 'content-type': 'application/json' },
