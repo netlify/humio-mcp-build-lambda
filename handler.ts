@@ -45,18 +45,53 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
       timeout: HUMIO_REQUEST_TIMEOUT_MS + 5000, // Add 5s buffer for cleanup
     });
 
-    // Set up timeout
-    const timeout = setTimeout(() => {
-      mcpProcess.kill();
-    }, HUMIO_REQUEST_TIMEOUT_MS);
-
     // Collect output
     let output = '';
     let errorOutput = '';
+    let settled = false;
 
     return new Promise((resolve) => {
+      const finish = (result: APIGatewayProxyResultV2) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        // humio-mcp's stdio transport is a long-lived server loop -- it
+        // won't exit on its own after one response, so kill it once we
+        // have what we need rather than waiting for natural exit.
+        mcpProcess.kill();
+        resolve(result);
+      };
+
+      // Set up timeout
+      const timeout = setTimeout(() => {
+        finish({
+          statusCode: 504,
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ error: 'MCP server timed out' }),
+        });
+      }, HUMIO_REQUEST_TIMEOUT_MS);
+
       mcpProcess.stdout?.on('data', (data) => {
         output += data.toString();
+
+        // MCP's stdio transport writes newline-delimited JSON-RPC
+        // messages. Resolve as soon as we have one complete line instead
+        // of closing stdin and waiting for the process to exit -- ending
+        // stdin immediately after writing races the child's async
+        // response generation against transport teardown.
+        const newlineIndex = output.indexOf('\n');
+        if (newlineIndex !== -1) {
+          const line = output.slice(0, newlineIndex);
+          console.log('humio-mcp stdout:', line);
+          if (errorOutput) {
+            console.log('humio-mcp stderr:', errorOutput);
+          }
+          finish({
+            statusCode: 200,
+            headers: { 'content-type': 'application/json' },
+            body: line,
+          });
+        }
       });
 
       mcpProcess.stderr?.on('data', (data) => {
@@ -64,9 +99,8 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
       });
 
       mcpProcess.on('error', (err) => {
-        clearTimeout(timeout);
         console.error('humio-mcp process error:', err);
-        resolve({
+        finish({
           statusCode: 500,
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ error: 'MCP server failed to start' }),
@@ -74,40 +108,20 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
       });
 
       mcpProcess.on('close', (code) => {
-        clearTimeout(timeout);
-
         if (code !== 0 && code !== null) {
           console.error(`humio-mcp exited with code ${code}: ${errorOutput}`);
-          return resolve({
-            statusCode: 502,
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ error: 'MCP server error' }),
-          });
         }
-
-        if (output) {
-          console.log('humio-mcp stdout:', output);
-          if (errorOutput) {
-            console.log('humio-mcp stderr:', errorOutput);
-          }
-          return resolve({
-            statusCode: 200,
-            headers: { 'content-type': 'application/json' },
-            body: output,
-          });
-        }
-
-        return resolve({
-          statusCode: 200,
+        finish({
+          statusCode: code === 0 || code === null ? 200 : 502,
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({}),
+          body: output || JSON.stringify({ error: 'MCP server produced no output', stderr: errorOutput }),
         });
       });
 
-      // Send request to humio-mcp stdin
+      // Send request to humio-mcp stdin. Deliberately not calling
+      // stdin.end() -- see finish() above.
       if (mcpProcess.stdin) {
-        mcpProcess.stdin.write(body);
-        mcpProcess.stdin.end();
+        mcpProcess.stdin.write(body.endsWith('\n') ? body : body + '\n');
       }
     });
   } catch (error: any) {
