@@ -1,0 +1,57 @@
+name: Build humio-mcp Lambda Layer
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'handler.ts'
+      - 'build_layer.sh'
+      - 'package.json'
+      - 'tsconfig.json'
+      - '.github/workflows/build-release.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.18.0'
+
+      - name: Build humio-mcp Lambda layer
+        run: bash build_layer.sh
+
+      - name: Create release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: .terraform/humio_mcp_layer.zip
+          tag_name: ${{ github.sha }}
+          name: humio-mcp-layer-${{ github.sha }}
+          body: |
+            Humio MCP Lambda layer build
+
+            **Commit**: ${{ github.sha }}
+            **Built**: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update latest release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: .terraform/humio_mcp_layer.zip
+          tag_name: latest
+          name: humio-mcp-layer (latest)
+          body: |
+            Latest humio-mcp Lambda layer build
+
+            **Commit**: ${{ github.sha }}
+            **Built**: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
