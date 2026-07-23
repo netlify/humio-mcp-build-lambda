@@ -1,0 +1,62 @@
+name: Build humio-mcp Lambda Layer
+
+on:
+  push:
+    paths:
+      - 'handler.ts'
+      - 'build_layer.sh'
+      - 'package.json'
+      - 'tsconfig.json'
+      - '.github/workflows/build-release.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.18.0'
+
+      - name: Build humio-mcp Lambda layer
+        run: bash build_layer.sh
+
+      - name: Determine release tag and name
+        id: release-info
+        run: |
+          BRANCH_NAME=${GITHUB_REF#refs/heads/}
+          if [ "$BRANCH_NAME" = "main" ]; then
+            TAG_NAME="latest"
+            RELEASE_NAME="humio-mcp-layer (latest)"
+            PRERELEASE=false
+          else
+            TAG_NAME="build-$BRANCH_NAME-${{ github.sha }}"
+            RELEASE_NAME="humio-mcp-layer ($BRANCH_NAME)"
+            PRERELEASE=true
+          fi
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+          echo "release_name=$RELEASE_NAME" >> $GITHUB_OUTPUT
+          echo "prerelease=$PRERELEASE" >> $GITHUB_OUTPUT
+
+      - name: Create release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            .terraform/humio_mcp_layer.zip
+            .terraform/handler.zip
+          tag_name: ${{ steps.release-info.outputs.tag_name }}
+          name: ${{ steps.release-info.outputs.release_name }}
+          prerelease: ${{ steps.release-info.outputs.prerelease }}
+          body: |
+            Humio MCP Lambda layer build
+
+            **Branch**: ${{ github.ref_name }}
+            **Commit**: ${{ github.sha }}
+            **Built**: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
