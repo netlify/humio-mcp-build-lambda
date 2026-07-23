@@ -32,6 +32,21 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
       };
     }
 
+    console.log('humio-mcp request:', body);
+
+    // JSON-RPC notifications (no "id" field) never get a response -- most
+    // notably notifications/initialized, sent right after initialize as
+    // part of the MCP handshake. Waiting for stdout on those would hang
+    // until our own timeout, since the server correctly never writes
+    // anything back.
+    let isNotification = false;
+    try {
+      const parsed = JSON.parse(body);
+      isNotification = !Array.isArray(parsed) && parsed !== null && typeof parsed === 'object' && !('id' in parsed);
+    } catch {
+      // Not valid JSON -- let humio-mcp itself produce the JSON-RPC parse error.
+    }
+
     // humio-mcp ships as a Node/ESM entry point in the Lambda layer
     // (/opt/dist/index.js), not a standalone executable -- run it with the
     // same node binary executing this handler.
@@ -122,6 +137,10 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
       // stdin.end() -- see finish() above.
       if (mcpProcess.stdin) {
         mcpProcess.stdin.write(body.endsWith('\n') ? body : body + '\n');
+      }
+
+      if (isNotification) {
+        finish({ statusCode: 202, headers: { 'content-type': 'application/json' }, body: '' });
       }
     });
   } catch (error: any) {
